@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use git2::{Oid, Repository};
 
-use crate::crypto::{Crypto, FindSigningFingerprintStrategy, GpgMe, VerificationError};
+use crate::crypto::{CryptoImpl, Crypto, FindSigningFingerprintStrategy, GpgMe, Sequoia, VerificationError};
 pub use crate::error::{Error, Result};
 pub use crate::signature::{
     parse_signing_keys, Comment, KeyRingStatus, OwnerTrustLevel, Recipient, SignatureStatus,
@@ -63,13 +63,27 @@ impl PasswordStore {
         password_store_signing_key: &Option<String>,
         home: &Option<PathBuf>,
         style_file: &Option<PathBuf>,
+        crypto_impl: &CryptoImpl,
+        own_fingerprint: &Option<[u8; 20]>,
     ) -> Result<PasswordStore> {
         let pass_home = password_dir_raw(password_store_dir, home);
         if !pass_home.exists() {
             return Err(Error::Generic("failed to locate password directory"));
         }
 
-        let crypto = Box::new(GpgMe {});
+        let crypto: Box<dyn Crypto + Send> = match crypto_impl {
+            CryptoImpl::GpgMe => Box::new(GpgMe {}),
+            CryptoImpl::Sequoia => {
+                if own_fingerprint.is_none() {
+                    return Err(Error::Generic("own_fingerprint is not configured, required for using Sequoia as pgp implementation"));
+                }
+                if home.is_none() {
+                    return Err(Error::Generic("no home, required for using Sequoia as pgp implementation"));
+                }
+                let home: PathBuf = home.clone().unwrap();
+                Box::new(Sequoia::new(&home.join(".local"), own_fingerprint.unwrap())?)
+            }
+        };
 
         let signing_keys = parse_signing_keys(password_store_signing_key, crypto.as_ref())?;
 
@@ -193,6 +207,11 @@ impl PasswordStore {
     /// returns the style file for the store
     pub fn get_style_file(&self) -> Option<PathBuf> {
         self.style_file.clone()
+    }
+
+    /// returns the style file for the store
+    pub fn get_crypto(&self) -> &Box<dyn Crypto + Send> {
+        &self.crypto
     }
 
     /// resets the store object, so that it points to a different directory.
@@ -1280,16 +1299,16 @@ pub fn pull(store: &PasswordStore) -> Result<()> {
 }
 
 /// Import the key_ids from the signature file from a keyserver.
-pub fn pgp_pull(store: &PasswordStore) -> Result<String> {
+pub fn pgp_pull(store: &mut PasswordStore, config_path: &Path) -> Result<String> {
     let recipients = store.all_recipients()?;
 
-    let result = store.crypto.pull_keys(&recipients)?;
+    let result = store.crypto.pull_keys(&recipients, config_path)?;
 
     Ok(result)
 }
 
-pub fn pgp_import(store: &PasswordStore, text: &str) -> Result<String> {
-    store.crypto.import_key(text)
+pub fn pgp_import(store: &mut PasswordStore, text: &str, config_path: &Path) -> Result<String> {
+    store.crypto.import_key(text, config_path)
 }
 
 fn triple<T: Display>(
@@ -1605,6 +1624,10 @@ pub fn save_config(
                 "valid_signing_keys",
                 store.get_valid_gpg_signing_keys().join(","),
             );
+        }
+        store_map.insert("pgp_implementation", store.crypto.implementation().to_string());
+        if store.crypto.own_fingerprint().is_some() {
+            store_map.insert("own_fingerprint", hex::encode_upper(store.crypto.own_fingerprint().unwrap()));
         }
         stores_map.insert(store.get_name(), store_map);
     }

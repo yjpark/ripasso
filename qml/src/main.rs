@@ -19,6 +19,7 @@ use qml::*;
 
 use pass::PasswordEntry;
 use ripasso::pass;
+use ripasso::crypto::CryptoImpl;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -186,6 +187,8 @@ fn main() {
             &password_store_dir,
             &password_store_signing_key,
             &home,
+            &None,
+            &CryptoImpl::GpgMe,
             &None,
         )
         .unwrap(),

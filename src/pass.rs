@@ -66,7 +66,7 @@ impl PasswordStore {
     ) -> Result<PasswordStore> {
         let pass_home = password_dir_raw(password_store_dir, home);
         if !pass_home.exists() {
-            return Err(Error::Generic("failed to locate password directory"));
+            return Err(Error::GenericDyn(format!("failed to locate password directory: {:?}", pass_home)));
         }
 
         let crypto = Box::new(GpgMe {});
@@ -204,7 +204,7 @@ impl PasswordStore {
     ) -> Result<()> {
         let pass_home = password_dir_raw(&Some(password_store_dir.to_path_buf()), home);
         if !pass_home.exists() {
-            return Err(Error::Generic("failed to locate password directory"));
+            return Err(Error::GenericDyn(format!("failed to locate password directory: {:?}", pass_home)));
         }
 
         if !valid_signing_keys.is_empty() {
@@ -1401,7 +1401,7 @@ pub fn password_dir(
 ) -> Result<PathBuf> {
     let pass_home = password_dir_raw(password_store_dir, home);
     if !pass_home.exists() {
-        return Err(Error::Generic("failed to locate password directory"));
+        return Err(Error::GenericDyn(format!("failed to locate password directory: {:?}", pass_home)));
     }
     Ok(pass_home)
 }
@@ -1413,7 +1413,12 @@ pub fn password_dir_raw(password_store_dir: &Option<PathBuf>, home: &Option<Path
         Some(p) => p.clone(),
         None => match home {
             Some(h) => h.join(".password-store"),
-            None => PathBuf::new().join(".password-store"),
+            None => {
+                match dirs::home_dir() {
+                    Some(dir) => dir.join(".password-store"),
+                    None => PathBuf::new().join(".password-store"),
+                }
+            }
         },
     }
 }

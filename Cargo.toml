@@ -19,6 +19,7 @@ toml = "0.5.8"
 reqwest = { version = "0.11.6", features = ["blocking"] }
 hex = "0.4.3"
 thiserror = "1.0.25"
+dirs = "4.0.0"
 
 [dependencies.config]
 version = "0.11.0"

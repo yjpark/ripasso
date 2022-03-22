@@ -3,8 +3,10 @@ use std::io;
 use std::path;
 use std::string;
 
+use thiserror;
+
 /// A enum that contains the different types of errors that the library returns as part of Result's.
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     Io(io::Error),
     Git(git2::Error),
